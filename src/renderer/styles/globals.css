@@ -1,0 +1,242 @@
+/* macOS Tahoe Liquid Glass Design System */
+:root {
+  /* Liquid Glass - core translucent layers */
+  --glass-bg: rgba(255, 255, 255, 0.10);
+  --glass-bg-hover: rgba(255, 255, 255, 0.16);
+  --glass-border: rgba(255, 255, 255, 0.18);
+  --glass-border-strong: rgba(255, 255, 255, 0.32);
+
+  /* Multi-layer shadow: ambient + key light + specular */
+  --glass-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.12),
+    0 8px 32px rgba(0, 0, 0, 0.28),
+    0 24px 64px rgba(0, 0, 0, 0.18),
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.30),
+    inset 0 -0.5px 0 rgba(0, 0, 0, 0.08);
+
+  --glass-shadow-elevated:
+    0 2px 4px rgba(0, 0, 0, 0.08),
+    0 12px 40px rgba(0, 0, 0, 0.32),
+    0 32px 80px rgba(0, 0, 0, 0.22),
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -0.5px 0 rgba(0, 0, 0, 0.10);
+
+  --glass-inner-glow: inset 0 1px 1px rgba(255, 255, 255, 0.18);
+
+  /* Radius - Apple HIG 2024 */
+  --radius-dock: 20px;
+  --radius-item: 14px;
+  --radius-panel: 16px;
+  --radius-button: 10px;
+  --radius-input: 10px;
+
+  /* Text */
+  --text-primary: rgba(255, 255, 255, 0.95);
+  --text-secondary: rgba(255, 255, 255, 0.60);
+  --text-tertiary: rgba(255, 255, 255, 0.38);
+
+  /* Accent - Apple system blue */
+  --accent: #007AFF;
+  --accent-glass: rgba(0, 122, 255, 0.75);
+  --accent-glass-hover: rgba(0, 122, 255, 0.90);
+  --accent-border: rgba(0, 122, 255, 0.40);
+  --danger: rgba(255, 59, 48, 0.85);
+
+  /* Motion */
+  --spring-fast: 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-out: 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Legacy aliases */
+  --bg-primary: rgba(20, 20, 40, 0.6);
+  --bg-secondary: rgba(30, 30, 60, 0.5);
+  --border: rgba(255, 255, 255, 0.15);
+  --text: rgba(255, 255, 255, 0.95);
+  --border-radius-dock: var(--radius-dock);
+  --border-radius-item: var(--radius-item);
+  --transition: 0.15s ease;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', system-ui, sans-serif;
+  color: var(--text-primary);
+  font-size: 12px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+  letter-spacing: -0.01em;
+}
+
+/* Hide ALL scrollbars */
+::-webkit-scrollbar { display: none; }
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  background: none;
+  color: inherit;
+}
+
+input,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.07);
+  border: 0.5px solid var(--glass-border);
+  border-radius: var(--radius-input);
+  outline: none;
+  padding: 7px 11px;
+  transition: border-color var(--ease-out), background var(--ease-out), box-shadow var(--ease-out);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-tertiary);
+}
+
+input:focus,
+textarea:focus {
+  border-color: rgba(0, 122, 255, 0.55);
+  background: rgba(255, 255, 255, 0.10);
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15), inset 0 0.5px 0 rgba(255, 255, 255, 0.12);
+}
+
+/* ─── Liquid Glass Panel ────────────────────────────────────────── */
+/* Tahoe-style: frosted glass with specular top edge and subtle gradient */
+.glass-panel {
+  background:
+    /* Specular highlight - top edge light refraction */
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.06) 0%,
+      rgba(255, 255, 255, 0.01) 40%,
+      transparent 100%
+    ),
+    /* Dark glass fill - visible on any desktop wallpaper */
+    rgba(30, 30, 40, 0.78);
+
+  border: 0.5px solid rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius-dock);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.20),
+    0 8px 32px rgba(0, 0, 0, 0.35),
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.18);
+  position: relative;
+  isolation: isolate;
+}
+
+/* Inner specular ring on top border */
+.glass-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 0.5px solid transparent;
+  border-top-color: rgba(255, 255, 255, 0.28);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Elevated glass for panels (modals, popovers) */
+.glass-panel-elevated {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.11) 0%,
+      rgba(255, 255, 255, 0.03) 50%,
+      rgba(255, 255, 255, 0.00) 100%
+    ),
+    rgba(255, 255, 255, 0.10);
+  backdrop-filter: blur(60px) saturate(220%) brightness(1.08);
+  -webkit-backdrop-filter: blur(60px) saturate(220%) brightness(1.08);
+  border: 0.5px solid rgba(255, 255, 255, 0.22);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--glass-shadow-elevated);
+  position: relative;
+  isolation: isolate;
+}
+
+.glass-panel-elevated::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 0.5px solid transparent;
+  border-top-color: rgba(255, 255, 255, 0.32);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ─── Tooltip ───────────────────────────────────────────────────── */
+.dock-tooltip {
+  position: fixed;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.03) 100%),
+    rgba(22, 22, 28, 0.82);
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  border: 0.5px solid rgba(255, 255, 255, 0.20);
+  border-radius: 9px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.92);
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.25),
+    0 8px 24px rgba(0, 0, 0, 0.18),
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.22);
+  letter-spacing: -0.01em;
+  z-index: 9999;
+}
+
+/* ─── Keyframe Animations ───────────────────────────────────────── */
+@keyframes tooltipIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+@keyframes tooltipFade {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes badgePulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+}
+
+.badge-pulse {
+  animation: badgePulse 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 1;
+}

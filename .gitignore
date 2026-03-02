@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.vite/
+*.dmg
+*.zip
+native/.build/
+.DS_Store
+.omc/
+SESSION_HANDOVER.md

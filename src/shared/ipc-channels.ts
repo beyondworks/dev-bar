@@ -1,0 +1,16 @@
+export const IPC = {
+  WINDOWS_LIST: 'windows:list',
+  WINDOWS_ACTIVATE: 'windows:activate',
+  WINDOWS_TOGGLE: 'windows:toggle',
+  WINDOWS_NEW: 'windows:new-window',
+  APPS_LIST_INSTALLED: 'apps:list-installed',
+  DOCK_SAVE: 'dock:save',
+  DOCK_LOAD: 'dock:load',
+  DOCK_SET_POSITION: 'dock:set-position',
+  DOCK_ADD_FRONTMOST: 'dock:add-frontmost',
+  DOCK_RESIZE: 'dock:resize',
+  PERMISSIONS_CHECK: 'permissions:check',
+  PERMISSIONS_OPEN_SETTINGS: 'permissions:open-settings',
+  APP_ICON: 'app:icon',
+  DOCK_CONTEXT_MENU: 'dock:context-menu',
+} as const;
