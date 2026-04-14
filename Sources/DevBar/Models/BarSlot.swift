@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 struct BarSlot: Identifiable, Hashable {
     let id: UUID
@@ -7,6 +8,10 @@ struct BarSlot: Identifiable, Hashable {
     var bundleIdentifier: String?
     var appName: String
     var windowTitle: String
+    /// Stable window identifier captured at slot creation — survives title
+    /// changes (e.g. VS Code retitling on tab switch). Used to disambiguate
+    /// multiple windows of the same process.
+    var cgWindowID: CGWindowID?
     var status: SlotStatus
     var badgeCount: Int
     /// Non-nil means the window is currently stashed off-screen; value is the
@@ -20,6 +25,7 @@ struct BarSlot: Identifiable, Hashable {
         bundleIdentifier: String?,
         appName: String,
         windowTitle: String,
+        cgWindowID: CGWindowID? = nil,
         status: SlotStatus = .idle,
         badgeCount: Int = 0,
         stashedPosition: CGPoint? = nil
@@ -30,6 +36,7 @@ struct BarSlot: Identifiable, Hashable {
         self.bundleIdentifier = bundleIdentifier
         self.appName = appName
         self.windowTitle = windowTitle
+        self.cgWindowID = cgWindowID
         self.status = status
         self.badgeCount = badgeCount
         self.stashedPosition = stashedPosition

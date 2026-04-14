@@ -147,17 +147,11 @@ final class BarPanelController {
             screenFrame: screen.visibleFrame
         )
         guard !panel.frame.equalTo(frame) else { return }
-
-        if panel.isVisible {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.22
-                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                context.allowsImplicitAnimation = true
-                panel.animator().setFrame(frame, display: true)
-            }
-        } else {
-            panel.setFrame(frame, display: true, animate: false)
-        }
+        // Resize synchronously: NSAnimationContext-animated setFrame caused
+        // ghost-double renders because SwiftUI inside the hosting view
+        // re-laid out at the final intrinsic size while the panel was mid-animation.
+        // Smoothness comes from SwiftUI-side spring animations on slot changes.
+        panel.setFrame(frame, display: true, animate: false)
     }
 
     private func calcFrame(for position: BarPosition, content: CGSize, screenFrame: CGRect) -> NSRect {

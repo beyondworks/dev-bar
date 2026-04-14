@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         PermissionsHelper.requestAccessibilityIfNeeded()
         AppMonitor.shared.start()
+        ActivityMonitor.shared.configure(store: store)
 
         settingsController = SettingsWindowController(settings: settings)
 

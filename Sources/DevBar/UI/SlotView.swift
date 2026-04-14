@@ -5,7 +5,6 @@ struct SlotView: View {
     let slot: BarSlot
     let theme: Theme
     let axis: Axis
-    let onActivate: () -> Void
     let onRemove: () -> Void
     let onRename: (String) -> Void
 
@@ -13,22 +12,20 @@ struct SlotView: View {
     @State private var editingLabel = ""
 
     var body: some View {
-        Button(action: onActivate) {
-            content
-                .padding(.horizontal, 8).padding(.vertical, 4)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(slot.stashedPosition != nil ? theme.accent.opacity(0.25) : theme.slotBackground)
-                )
-        }
-        .buttonStyle(.plain)
-        .help(slot.windowTitle)
-        .contextMenu {
-            Button("이름 변경…") { startEditing() }
-            Divider()
-            Button("제거", role: .destructive, action: onRemove)
-        }
-        .sheet(isPresented: $isEditing) { renameSheet }
+        content
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(slot.stashedPosition != nil ? theme.accent.opacity(0.25) : theme.slotBackground)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .help(slot.windowTitle)
+            .contextMenu {
+                Button("이름 변경…") { startEditing() }
+                Divider()
+                Button("제거", role: .destructive, action: onRemove)
+            }
+            .sheet(isPresented: $isEditing) { renameSheet }
     }
 
     @ViewBuilder
@@ -94,7 +91,7 @@ struct SlotView: View {
     private var statusColor: Color {
         switch slot.status {
         case .idle: return .gray
-        case .working: return .blue
+        case .working: return .green
         case .waitingInput: return .yellow
         case .error: return .red
         case .done: return .green

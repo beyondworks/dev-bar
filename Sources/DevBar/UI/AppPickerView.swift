@@ -117,12 +117,14 @@ struct AppPickerView: View {
     private func add(title: String) {
         guard let pid = selectedAppPID else { return }
         let app = NSRunningApplication(processIdentifier: pid)
+        let windowID = WindowManager.cgWindowID(pid: pid, windowTitle: title)
         let slot = BarSlot(
             label: title,
             pid: pid,
             bundleIdentifier: app?.bundleIdentifier,
             appName: app?.localizedName ?? "App",
-            windowTitle: title
+            windowTitle: title,
+            cgWindowID: windowID
         )
         store.addSlot(slot)
         isPresented = false

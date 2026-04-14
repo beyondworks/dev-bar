@@ -52,6 +52,13 @@ private struct TotalSizeKey: PreferenceKey {
     }
 }
 
+private struct SlotSizeKey: PreferenceKey {
+    static var defaultValue: [UUID: CGSize] = [:]
+    static func reduce(value: inout [UUID: CGSize], nextValue: () -> [UUID: CGSize]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
 struct BarView: View {
     @ObservedObject var store: BarStore
     @ObservedObject var settings: SettingsStore
@@ -64,6 +71,11 @@ struct BarView: View {
     @State private var innerContentLength: CGFloat = 0
     @State private var showingPicker = false
     @State private var scrollAnchorIndex: Int = 0
+
+    // Drag-reorder state (Dock-style long-press + drag with push-away).
+    @State private var draggingID: UUID?
+    @State private var dragOffset: CGFloat = 0
+    @State private var slotSizes: [UUID: CGSize] = [:]
 
     private var position: BarPosition { forcedPosition ?? settings.barPosition }
     private var axis: Axis { position.isVertical ? .vertical : .horizontal }
@@ -85,7 +97,6 @@ struct BarView: View {
         .padding(axis == .horizontal ? .vertical : .horizontal, 6)
         .frame(minWidth: axis == .vertical ? 56 : nil, minHeight: axis == .horizontal ? 56 : nil)
         .modifier(BarBackgroundModifier(theme: theme, opacity: settings.backgroundOpacity))
-        .animation(.easeOut(duration: 0.22), value: store.slots)
         .fixedSize(horizontal: axis == .horizontal, vertical: axis == .vertical)
         .background(
             GeometryReader { geo in
@@ -136,6 +147,10 @@ struct BarView: View {
                 }
                 .padding(.horizontal, 2)
                 .background(lengthProbe(axis: .horizontal))
+                .animation(.spring(response: 0.32, dampingFraction: 0.78), value: store.slots.map(\.id))
+                .onPreferenceChange(SlotSizeKey.self) { sizes in
+                    Task { @MainActor in slotSizes = sizes }
+                }
             }
             .frame(width: scrollAreaLength)
             .onPreferenceChange(InnerContentLengthKey.self) { len in
@@ -159,6 +174,10 @@ struct BarView: View {
                 }
                 .padding(.vertical, 2)
                 .background(lengthProbe(axis: .vertical))
+                .animation(.spring(response: 0.32, dampingFraction: 0.78), value: store.slots.map(\.id))
+                .onPreferenceChange(SlotSizeKey.self) { sizes in
+                    Task { @MainActor in slotSizes = sizes }
+                }
             }
             .frame(height: scrollAreaLength)
             .onPreferenceChange(InnerContentLengthKey.self) { len in
@@ -183,20 +202,119 @@ struct BarView: View {
     }
 
     private func slotItem(for slot: BarSlot) -> some View {
-        SlotView(
+        let isDragged = draggingID == slot.id
+        return SlotView(
             slot: slot,
             theme: theme,
             axis: axis,
-            onActivate: { activate(slot) },
             onRemove: { store.removeSlot(id: slot.id) },
             onRename: { newLabel in store.updateLabel(id: slot.id, label: newLabel) }
         )
-        .draggable(slot.id.uuidString)
-        .dropDestination(for: String.self) { items, _ in
-            guard let idString = items.first,
-                  let sourceID = UUID(uuidString: idString) else { return false }
-            return store.move(sourceID: sourceID, beforeID: slot.id)
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(key: SlotSizeKey.self, value: [slot.id: geo.size])
+            }
+        )
+        .offset(
+            x: axis == .horizontal ? pushOffset(for: slot) : 0,
+            y: axis == .vertical ? pushOffset(for: slot) : 0
+        )
+        .scaleEffect(isDragged ? 1.06 : 1.0)
+        .shadow(color: Color.black.opacity(isDragged ? 0.28 : 0), radius: 8, y: 4)
+        .zIndex(isDragged ? 1 : 0)
+        .animation(.spring(response: 0.28, dampingFraction: 0.78), value: draggingID)
+        .contentShape(Rectangle())
+        .gesture(unifiedClickDrag(for: slot))
+        .transition(.asymmetric(
+            insertion: .scale(scale: 0.6).combined(with: .opacity),
+            removal: .scale(scale: 0.6).combined(with: .opacity)
+        ))
+    }
+
+    // MARK: - Click / drag (Dock-style, single gesture)
+
+    private static let dragThreshold: CGFloat = 6
+
+    /// Single gesture covers both "click" (tap) and "drag" (reorder).
+    /// onEnded decides which one fired based on total translation.
+    private func unifiedClickDrag(for slot: BarSlot) -> some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .local)
+            .onChanged { value in
+                let movedEnough = abs(value.translation.width) >= Self.dragThreshold
+                    || abs(value.translation.height) >= Self.dragThreshold
+                guard movedEnough else { return }
+                if draggingID != slot.id { draggingID = slot.id }
+                dragOffset = (axis == .horizontal) ? value.translation.width : value.translation.height
+            }
+            .onEnded { value in
+                let translation = (axis == .horizontal) ? value.translation.width : value.translation.height
+                let movedEnough = abs(translation) >= Self.dragThreshold
+                // Require BOTH a real drag AND crossing at least one slot boundary
+                // to treat as reorder. Otherwise it's a click (even if the pointer
+                // jittered a few pixels during the press).
+                let steps = reorderStepCount(for: translation)
+                if movedEnough && steps != 0 {
+                    commitReorder(slotID: slot.id, translation: translation)
+                    resetDrag()
+                } else {
+                    resetDrag()
+                    activate(slot)
+                }
+            }
+    }
+
+    private func commitReorder(slotID: UUID, translation: CGFloat) {
+        guard let sourceIndex = store.slots.firstIndex(where: { $0.id == slotID }) else { return }
+        let steps = reorderStepCount(for: translation)
+        guard steps != 0 else { return }
+        let targetIndex = max(0, min(store.slots.count - 1, sourceIndex + steps))
+        guard targetIndex != sourceIndex else { return }
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.78)) {
+            _ = store.move(sourceID: slotID, toIndex: targetIndex)
         }
+    }
+
+    private func resetDrag() {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) {
+            draggingID = nil
+            dragOffset = 0
+        }
+    }
+
+    /// Average slot size along the active axis, with a sane fallback.
+    private func averageSlotExtent() -> CGFloat {
+        let extents: [CGFloat] = slotSizes.values.map { axis == .horizontal ? $0.width : $0.height }
+        guard !extents.isEmpty else { return 80 }
+        return max(40, extents.reduce(0, +) / CGFloat(extents.count))
+    }
+
+    /// Number of index positions the user has dragged past.
+    private func reorderStepCount(for translation: CGFloat) -> Int {
+        let unit = averageSlotExtent() + 6 // spacing
+        return Int((translation / unit).rounded())
+    }
+
+    /// Visual offset applied to each slot — makes non-dragged slots slide to
+    /// make room for the dragged one (Dock magnetic effect).
+    private func pushOffset(for slot: BarSlot) -> CGFloat {
+        guard let draggingID else { return 0 }
+        if slot.id == draggingID { return dragOffset }
+
+        guard let sourceIndex = store.slots.firstIndex(where: { $0.id == draggingID }),
+              let thisIndex = store.slots.firstIndex(where: { $0.id == slot.id }),
+              let draggedSize = slotSizes[draggingID] else { return 0 }
+
+        let draggedExtent = (axis == .horizontal ? draggedSize.width : draggedSize.height) + 6
+        let steps = reorderStepCount(for: dragOffset)
+        let targetIndex = max(0, min(store.slots.count - 1, sourceIndex + steps))
+
+        if sourceIndex < targetIndex && thisIndex > sourceIndex && thisIndex <= targetIndex {
+            return -draggedExtent
+        }
+        if sourceIndex > targetIndex && thisIndex < sourceIndex && thisIndex >= targetIndex {
+            return draggedExtent
+        }
+        return 0
     }
 
     private var plusButton: some View {
@@ -250,27 +368,46 @@ struct BarView: View {
 
     private func activate(_ slot: BarSlot) {
         guard let runningApp = NSRunningApplication(processIdentifier: slot.pid) else { return }
+        let wid = slot.cgWindowID
 
         if let stashedPos = slot.stashedPosition {
             if runningApp.isHidden { runningApp.unhide() }
-            WindowManager.setPosition(pid: slot.pid, windowTitle: slot.windowTitle, position: stashedPos)
-            WindowManager.focus(pid: slot.pid, windowTitle: slot.windowTitle)
+            WindowManager.setPosition(pid: slot.pid, windowTitle: slot.windowTitle, cgWindowID: wid, position: stashedPos)
+            WindowManager.focus(pid: slot.pid, windowTitle: slot.windowTitle, cgWindowID: wid)
             store.setStashedPosition(id: slot.id, nil)
             store.clearBadge(id: slot.id)
             return
         }
 
         let frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        // "Hide" fires only when the target window itself is frontmost AND visible.
+        // Check position: a window already at the off-screen anchor means it was
+        // stashed in a previous Dev-bar session; treat as "needs restore".
+        let currentPos = WindowManager.getPosition(pid: slot.pid, windowTitle: slot.windowTitle, cgWindowID: wid)
+        let isAlreadyOffscreen: Bool = {
+            guard let p = currentPos else { return false }
+            let union = NSScreen.screens.reduce(CGRect.null) { $0.union($1.frame) }
+            return !union.insetBy(dx: -50, dy: -50).contains(p)
+        }()
+
+        if isAlreadyOffscreen {
+            // Previous-session stash recovery: move to screen center and focus.
+            if runningApp.isHidden { runningApp.unhide() }
+            WindowManager.focus(pid: slot.pid, windowTitle: slot.windowTitle, cgWindowID: wid)
+            store.clearBadge(id: slot.id)
+            return
+        }
+
         if frontPID == slot.pid {
-            guard let currentPos = WindowManager.getPosition(pid: slot.pid, windowTitle: slot.windowTitle) else {
-                WindowManager.minimize(pid: slot.pid, windowTitle: slot.windowTitle)
+            guard let pos = currentPos else {
+                WindowManager.minimize(pid: slot.pid, windowTitle: slot.windowTitle, cgWindowID: wid)
                 return
             }
-            store.setStashedPosition(id: slot.id, currentPos)
-            WindowManager.setPosition(pid: slot.pid, windowTitle: slot.windowTitle, position: WindowManager.offscreenAnchor)
+            store.setStashedPosition(id: slot.id, pos)
+            WindowManager.setPosition(pid: slot.pid, windowTitle: slot.windowTitle, cgWindowID: wid, position: WindowManager.offscreenAnchor)
         } else {
             if runningApp.isHidden { runningApp.unhide() }
-            WindowManager.focus(pid: slot.pid, windowTitle: slot.windowTitle)
+            WindowManager.focus(pid: slot.pid, windowTitle: slot.windowTitle, cgWindowID: wid)
             store.clearBadge(id: slot.id)
         }
     }
