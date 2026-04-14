@@ -249,19 +249,20 @@ struct BarView: View {
             .onEnded { value in
                 let translation = (axis == .horizontal) ? value.translation.width : value.translation.height
                 let movedEnough = abs(translation) >= Self.dragThreshold
-                // Require BOTH a real drag AND crossing at least one slot boundary
-                // to treat as reorder. Otherwise it's a click (even if the pointer
-                // jittered a few pixels during the press).
                 let steps = reorderStepCount(for: translation)
                 if movedEnough && steps != 0 {
                     commitReorder(slotID: slot.id, translation: translation)
                     resetDrag()
                 } else {
                     resetDrag()
-                    activate(slot)
+                    // ⌥+click ⇒ Dock minimize; plain click ⇒ off-screen stash.
+                    let method: HideMethod = NSEvent.modifierFlags.contains(.option) ? .minimize : .stash
+                    activate(slot, hideMethod: method)
                 }
             }
     }
+
+    private enum HideMethod { case stash, minimize }
 
     private func commitReorder(slotID: UUID, translation: CGFloat) {
         guard let sourceIndex = store.slots.firstIndex(where: { $0.id == slotID }) else { return }
@@ -366,10 +367,11 @@ struct BarView: View {
         scrollAnchorIndex = max(0, min(last, scrollAnchorIndex + delta))
     }
 
-    private func activate(_ slot: BarSlot) {
+    private func activate(_ slot: BarSlot, hideMethod: HideMethod = .stash) {
         guard let runningApp = NSRunningApplication(processIdentifier: slot.pid) else { return }
         let wid = slot.cgWindowID
 
+        // 1) Dev-bar-stashed (off-screen) → restore to saved position.
         if let stashedPos = slot.stashedPosition {
             if runningApp.isHidden { runningApp.unhide() }
             WindowManager.setPosition(pid: slot.pid, windowTitle: slot.windowTitle, cgWindowID: wid, position: stashedPos)
@@ -379,19 +381,24 @@ struct BarView: View {
             return
         }
 
+        // 2) Dock-minimized → un-minimize + focus.
+        if WindowManager.isMinimized(pid: slot.pid, windowTitle: slot.windowTitle, cgWindowID: wid) {
+            if runningApp.isHidden { runningApp.unhide() }
+            WindowManager.focus(pid: slot.pid, windowTitle: slot.windowTitle, cgWindowID: wid)
+            store.clearBadge(id: slot.id)
+            return
+        }
+
         let frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        // "Hide" fires only when the target window itself is frontmost AND visible.
-        // Check position: a window already at the off-screen anchor means it was
-        // stashed in a previous Dev-bar session; treat as "needs restore".
         let currentPos = WindowManager.getPosition(pid: slot.pid, windowTitle: slot.windowTitle, cgWindowID: wid)
+        // Window sitting outside every screen = leftover stash from a previous
+        // Dev-bar session (we don't persist stash state yet).
         let isAlreadyOffscreen: Bool = {
             guard let p = currentPos else { return false }
             let union = NSScreen.screens.reduce(CGRect.null) { $0.union($1.frame) }
             return !union.insetBy(dx: -50, dy: -50).contains(p)
         }()
-
         if isAlreadyOffscreen {
-            // Previous-session stash recovery: move to screen center and focus.
             if runningApp.isHidden { runningApp.unhide() }
             WindowManager.focus(pid: slot.pid, windowTitle: slot.windowTitle, cgWindowID: wid)
             store.clearBadge(id: slot.id)
@@ -399,12 +406,18 @@ struct BarView: View {
         }
 
         if frontPID == slot.pid {
-            guard let pos = currentPos else {
+            // Hide — method chosen by click modifier.
+            switch hideMethod {
+            case .stash:
+                guard let pos = currentPos else {
+                    WindowManager.minimize(pid: slot.pid, windowTitle: slot.windowTitle, cgWindowID: wid)
+                    return
+                }
+                store.setStashedPosition(id: slot.id, pos)
+                WindowManager.setPosition(pid: slot.pid, windowTitle: slot.windowTitle, cgWindowID: wid, position: WindowManager.offscreenAnchor)
+            case .minimize:
                 WindowManager.minimize(pid: slot.pid, windowTitle: slot.windowTitle, cgWindowID: wid)
-                return
             }
-            store.setStashedPosition(id: slot.id, pos)
-            WindowManager.setPosition(pid: slot.pid, windowTitle: slot.windowTitle, cgWindowID: wid, position: WindowManager.offscreenAnchor)
         } else {
             if runningApp.isHidden { runningApp.unhide() }
             WindowManager.focus(pid: slot.pid, windowTitle: slot.windowTitle, cgWindowID: wid)

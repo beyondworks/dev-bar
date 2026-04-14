@@ -31,6 +31,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
+    /// Safety net: when Dev-bar quits, pull any off-screen (stashed) windows
+    /// back to their original positions so the user isn't left with orphan
+    /// windows floating outside every display.
+    func applicationWillTerminate(_ notification: Notification) {
+        for slot in store.slots {
+            guard let pos = slot.stashedPosition else { continue }
+            WindowManager.setPosition(
+                pid: slot.pid,
+                windowTitle: slot.windowTitle,
+                cgWindowID: slot.cgWindowID,
+                position: pos
+            )
+        }
+    }
+
     private func installStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = item.button {
