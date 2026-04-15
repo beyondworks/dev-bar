@@ -35,10 +35,27 @@ final class ActivityMonitor {
     private var entries: [UUID: Entry] = [:]
     private weak var store: BarStore?
     private var notificationsAuthorized = false
+    private var appTerminateObserver: NSObjectProtocol?
 
     func configure(store: BarStore) {
         self.store = store
         requestNotificationAuthorization()
+        observeAppTermination()
+    }
+
+    private func observeAppTermination() {
+        guard appTerminateObserver == nil else { return }
+        appTerminateObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didTerminateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            let pid = app.processIdentifier
+            Task { @MainActor in
+                self?.store?.removeSlots(matchingPID: pid)
+            }
+        }
     }
 
     // MARK: - Public API
@@ -64,9 +81,12 @@ final class ActivityMonitor {
             return
         }
 
-        // Additional signals: new child windows (permission dialogs etc.),
-        // focused window changes.
+        // Additional signals:
+        //  - focused-window change (ambient activity)
+        //  - window destroyed (user closed the window while the app is alive;
+        //    app-level termination is caught by NSWorkspace above).
         _ = AXObserverAddNotification(obs, window, kAXFocusedWindowChangedNotification as CFString, refcon)
+        _ = AXObserverAddNotification(obs, window, kAXUIElementDestroyedNotification as CFString, refcon)
 
         CFRunLoopAddSource(
             CFRunLoopGetCurrent(),
@@ -96,6 +116,16 @@ final class ActivityMonitor {
     }
 
     // MARK: - Callback entry point
+
+    /// Called by the C callback when the window element is destroyed.
+    func handleWindowDestroyed(pid: pid_t, element: AXUIElement) {
+        // AX element identity may not be stable; also remove by pid+entry id
+        // fallback. We pick the first matching entry by pid.
+        let matched = entries.values.first(where: { $0.pid == pid && CFEqual($0.element, element) })
+            ?? entries.values.first(where: { $0.pid == pid })
+        guard let entry = matched else { return }
+        store?.removeSlot(id: entry.slotID)
+    }
 
     /// Called by the C callback (hopped to main actor).
     func handleTitleChange(pid: pid_t, element: AXUIElement) {
@@ -183,8 +213,16 @@ private func axCallback(observer: AXObserver, element: AXUIElement, notification
     let monitor = Unmanaged<ActivityMonitor>.fromOpaque(refcon).takeUnretainedValue()
     var pid: pid_t = 0
     AXUIElementGetPid(element, &pid)
-    // AX callbacks arrive on the main runloop since we added the source there,
-    // but hop explicitly to MainActor for Swift concurrency correctness.
+
+    let notifName = notification as String
+    if notifName == (kAXUIElementDestroyedNotification as String) {
+        Task { @MainActor in
+            monitor.handleWindowDestroyed(pid: pid, element: element)
+        }
+        return
+    }
+    // Default: treat any other observed notification as "activity" and drive
+    // the title-change path (also covers focused-window changes as a hint).
     Task { @MainActor in
         monitor.handleTitleChange(pid: pid, element: element)
     }

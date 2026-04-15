@@ -16,6 +16,15 @@ final class BarStore: ObservableObject {
         slots.removeAll { $0.id == id }
     }
 
+    /// Remove every slot whose window belongs to the given process.
+    /// Used when an app terminates — we drop all its slots at once.
+    func removeSlots(matchingPID pid: pid_t) {
+        let ids = slots.filter { $0.pid == pid }.map(\.id)
+        for id in ids {
+            removeSlot(id: id)
+        }
+    }
+
     func updateLabel(id: UUID, label: String) {
         guard let i = slots.firstIndex(where: { $0.id == id }) else { return }
         slots[i].label = label
